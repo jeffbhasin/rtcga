@@ -15,6 +15,7 @@ nCores <- 15
 ###############################################
 library(ggplot2)
 library(gridExtra)
+library(reshape)
 library(doMC)
 registerDoMC(nCores)
 
@@ -105,7 +106,7 @@ getGeneData <- function(ann,samples,study,gene)
 
 		data[data$name==gene,]$normalized_count
 	}
-	matrix.tumor <- matrix(tumor.data,dimnames=list(samples.tumor$Barcode,gene))
+	matrix.tumor <- matrix(tumor.data,dimnames=list(samples.tumor$Barcode,"all"))
 
 	#normal
 	normal.files <- as.character(samples.normal$file)
@@ -123,7 +124,7 @@ getGeneData <- function(ann,samples,study,gene)
 
 		data[data$name==gene,]$normalized_count
 	}
-	matrix.normal <- matrix(normal.data,dimnames=list(samples.normal$Barcode,gene))
+	matrix.normal <- matrix(normal.data,dimnames=list(samples.normal$Barcode,"all"))
 
 	##get isoform data
 	
@@ -175,15 +176,94 @@ getGeneData <- function(ann,samples,study,gene)
 	list("tumor"=matrix.tumor.out,"normal"=matrix.normal.out)
 }
 
-plotGene <- function(samples.data.matrix)
+plotGene <- function(study,gene,samples.data.matrix)
 {
 	#Produce a plot after we have extracted the data for the given gene and its isoforms
+
+	#run t-tests
+	ts <- foreach(i=1:ncol(samples.data.matrix$tumor),.combine=c) %do%
+	{
+		myt <- t.test(samples.data.matrix$tumor[,i],samples.data.matrix$normal[,i])
+		myt$p.value
+	}
+
+	isos <- colnames(samples.data.matrix$normal)
+	isos <- isos[order(isos)]
+	ts <- round(ts[order(ts)],digits=8)
+
+	table.data <- data.frame()
+	table.data <- rbind(table.data,ts)
+	names(table.data) <- isos
+	rownames(table.data) <- "pvalue"
+
+	#recast data into a table
+	plot.data1 <- melt(samples.data.matrix$tumor)
+	plot.data1$tissue <- "tumor"
+
+	plot.data2 <- melt(samples.data.matrix$normal)
+	plot.data2$tissue <- "normal"
+
+	plot.data <- rbind(plot.data1,plot.data2)
+	names(plot.data) <- c("sample","isoform","level","tissue")
+
+	#produce plot
+	#p0 <- ggplot(plot.data, aes(isoform,level,fill=tissue)) + geom_boxplot(outlier.shape = NA)
+	#ylim1 = boxplot.stats(plot.data$level)$stats[c(1, 5)]
+	#p1 = p0 + coord_cartesian(ylim = c(0,ylim1*1.05))
+	#p1 + ggplot.clean() + scale_fill_manual(values=c("#009E73","#0072B2")) + labs(title=paste(gene," in ",study,sep=""))
+
+	p1 <- ggplot(plot.data, aes(isoform,level,fill=tissue)) + geom_boxplot() + ggplot.clean() + scale_fill_manual(values=c("#009E73","#0072B2")) + labs(title=paste(gene," in ",study,sep=""))
+
+	table.grob <- arrangeGrob(tableGrob(table.data, gpar.coretext=gpar(fontsize=10), gpar.coltext=gpar(fontsize=10), gpar.rowtext=gpar(fontsize=10)))
+	grid.arrange(p1, table.grob, ncol=1,heights=c(9/10,1/10))
+
 }
 
+#quantile norm plots:
+#load in all data for all genes from all samples for a given study
+#quantile normalize this matrix - also do so for isoforms
+#feed this matrix into a getGeneData like function to give
 
-samples.data.matrix <- getGeneData(ann,samples,"BRCA","SMCHD1")
-plotGene(samples.data.matrix)
 
+#regular plots
+mystudy <- "BRCA"
+mygene <- "SMCHD1"
+samples.data.matrix <- getGeneData(ann,samples,mystudy,mygene)
+png(filename=paste("output/",mystudy,".",mygene,".png",sep=""),res=120,width=1000,height=800)
+plotGene(mystudy,mygene,samples.data.matrix)
+dev.off()
 
-samples.data.matrix <- getGeneData(ann,samples,"PRAD","ABCA1")
-plotGene(samples.data.matrix)
+mystudy <- "BRCA"
+mygene <- "ABCA1"
+samples.data.matrix <- getGeneData(ann,samples,mystudy,mygene)
+png(filename=paste("output/",mystudy,".",mygene,".png",sep=""),res=120,width=1000,height=800)
+plotGene(mystudy,mygene,samples.data.matrix)
+dev.off()
+
+mystudy <- "BRCA"
+mygene <- "BRCA1"
+samples.data.matrix <- getGeneData(ann,samples,mystudy,mygene)
+png(filename=paste("output/",mystudy,".",mygene,".png",sep=""),res=120,width=1000,height=800)
+plotGene(mystudy,mygene,samples.data.matrix)
+dev.off()
+
+mystudy <- "PRAD"
+mygene <- "SMCHD1"
+samples.data.matrix <- getGeneData(ann,samples,mystudy,mygene)
+png(filename=paste("output/",mystudy,".",mygene,".png",sep=""),res=120,width=1000,height=800)
+plotGene(mystudy,mygene,samples.data.matrix)
+dev.off()
+
+mystudy <- "PRAD"
+mygene <- "ABCA1"
+samples.data.matrix <- getGeneData(ann,samples,mystudy,mygene)
+png(filename=paste("output/",mystudy,".",mygene,".png",sep=""),res=120,width=1000,height=800)
+plotGene(mystudy,mygene,samples.data.matrix)
+dev.off()
+
+mystudy <- "PRAD"
+mygene <- "BRCA1"
+samples.data.matrix <- getGeneData(ann,samples,mystudy,mygene)
+png(filename=paste("output/",mystudy,".",mygene,".png",sep=""),res=120,width=1600,height=800)
+plotGene(mystudy,mygene,samples.data.matrix)
+dev.off()
