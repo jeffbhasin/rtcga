@@ -5,6 +5,20 @@ library(stringr)
 library(reshape)
 library(foreach)
 
+ggplot.clean <- function()
+{
+	theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), legend.key.size = unit(0.8, "lines"), axis.line = element_line(colour = "grey50"))
+}
+
+read.table.big <- function(path)
+{
+	#detects colClasses on first 5 rows to speed up a big read in
+	tab5rows <- read.table(file=path, comment.char="", header=TRUE, stringsAsFactors=FALSE, sep="\t", quote="", nrows = 5)
+	classes <- sapply(tab5rows, class)
+	tabAll <- read.table(file=path, comment.char="", header=TRUE, stringsAsFactors=FALSE, sep="\t", quote="", colClasses = classes)
+	tabAll
+}
+
 findStudies <- function()
 {
 	#############################################################
