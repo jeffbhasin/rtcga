@@ -16,14 +16,13 @@ nCores <- 15
 library(ggplot2)
 library(gridExtra)
 library(reshape)
+library(preprocessCore)
 library(doMC)
 registerDoMC(nCores)
 
-ann <- readUCSCAnnotation(genome="hg19",data.path="GeneInfo/")
-
-studies <- findStudies()
-samples <- findSamples()
-
+###############################################
+## Local Functions
+###############################################
 testGene <- function(samples,study,gene)
 {
 	mysamples <- mysamples[which(mysamples$Disease==mystudy),]
@@ -219,10 +218,55 @@ plotGene <- function(study,gene,samples.data.matrix)
 
 }
 
-#quantile norm plots:
-#load in all data for all genes from all samples for a given study
-#quantile normalize this matrix - also do so for isoforms
-#feed this matrix into a getGeneData like function to give
+
+
+doQuantileNorm <- function(samples,study)
+{
+	#perform quantile normalization on the raw data and then use this data for getGeneData
+	samples.study <- samples[which((samples$Disease==study)&(samples$Sample.Type=="Solid Tissue Normal" | samples$Sample.Type=="Primary solid Tumor")),]
+
+	samples.data.raw <- foreach(i=1:nrow(samples.study), .combine=cbind, .inorder=TRUE, .verbose=TRUE) %dopar%
+	{
+		sample.data <- read.table.big(as.character(samples.study[i,]$file.iso.raw))
+		m <- as.matrix(sample.data$raw_count)
+		rownames(m) <- sample.data$isoform_id
+		colnames(m) <- as.character(samples.study[i,]$UUID)
+		m
+	}
+
+	quant.all <- normalize.quantiles(samples.data.raw,copy=TRUE)
+
+}
+
+getGeneDataQuantile <- function(samples,study,gene)
+{
+
+}
+
+################################
+# Initial Data Loading
+################################
+ann <- readUCSCAnnotation(genome="hg19",data.path="GeneInfo/")
+
+studies <- findStudies()
+samples <- findSamples()
+
+################################
+# Test SMCHD1 in BRCA
+################################
+samples.brca <- samples[which(samples$Disease=="BRCA"),]
+samples.brca.data <- readSampleData(samples.brca)
+save(samples.brca,samples.brca.data,file="output/brca.RData")
+load("output/brca.RData")
+
+
+################################
+# Test SMCHD1 in PRAD
+################################
+samples.prad <- samples[which(samples$Disease=="PRAD"),]
+samples.prad.data <- readSampleData(samples.prad)
+save(samples.prad,samples.prad.data,file="output/prad.RData")
+load("output/prad.RData")
 
 
 #regular plots
