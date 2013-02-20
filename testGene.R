@@ -177,6 +177,23 @@ doQuantileNorm <- function(samples, samples.data, study)
 	mine.out
 }
 
+doLogTransform <- function(samples, samples.data,study)
+{
+	#subset the correct study
+	samples.study <- samples[samples$Disease==study,]
+	samples.study.rows <- samples$Disease==study
+
+	#create subsetted matrix
+	samples.data.study <- list("genes.norm"=samples.data$genes.norm[samples.study.rows,], "isoforms.norm"=samples.data$isoforms.norm[samples.study.rows,])
+
+	log.all.genes <- log10(samples.data.study$genes.norm)
+	log.all.isoforms <- log10(samples.data.study$isoforms.norm)
+
+	mine.out <- list("genes.norm"=log.all.genes,"isoforms.norm"=log.all.isoforms)
+	mine.out
+
+}
+
 ################################
 # Initial Data Loading
 ################################
@@ -190,7 +207,8 @@ samples <- findSamples()
 #save(samples.brca,samples.data.brca,file="output/brca.RData")
 load("output/brca.RData")
 samples.data.brca.quant <- doQuantileNorm(samples.brca,samples.data.brca,"BRCA")
-
+samples.data.brca.log <- doLogTransform(samples.brca,samples.data.brca,"BRCA")
+samples.data.brca.quant.log <- doLogTransform(samples.brca,samples.data.brca.quant,"BRCA")
 
 ################################
 # Test All Genes in BRCA
@@ -205,6 +223,20 @@ write.csv(test.brca$isoforms.t.test,file="output/BRCA.t-test.isoforms.csv", row.
 test.brca <- testGenes(samples.brca,samples.data.brca.quant,study="BRCA",ann=ann)
 write.csv(test.brca$genes.t.test,file="output/BRCA.t-test.genes-quantile_norm.csv", row.names=FALSE)
 write.csv(test.brca$isoforms.t.test,file="output/BRCA.t-test.isoforms-quantile_norm.csv", row.names=FALSE)
+
+################################
+# Test All Genes in BRCA - Log Scale
+################################
+test.brca <- testGenes(samples.brca,samples.data.brca.log,study="BRCA",ann=ann)
+write.csv(test.brca$genes.t.test,file="output/BRCA.t-test.genes-log10.csv", row.names=FALSE)
+write.csv(test.brca$isoforms.t.test,file="output/BRCA.t-test.isoforms-log10.csv", row.names=FALSE)
+
+################################
+# Test All Genes in BRCA - Quantile Normalized Log Scale
+################################
+test.brca <- testGenes(samples.brca,samples.data.brca.quant.log,study="BRCA",ann=ann)
+write.csv(test.brca$genes.t.test,file="output/BRCA.t-test.genes-quantile_norm_log10.csv", row.names=FALSE)
+write.csv(test.brca$isoforms.t.test,file="output/BRCA.t-test.isoforms-quantile_norm_log10.csv", row.names=FALSE)
 
 ################################
 # Test All Genes in PRAD
@@ -254,6 +286,46 @@ plotGene(samples.brca,samples.data.brca,study=mystudy,gene=mygene)
 dev.off()
 
 ################################
+# Test+Plot Select Genes in BRCA - log scale
+################################
+mystudy <- "BRCA"
+
+mygene <- "SMCHD1"
+png(filename=paste("output/",mystudy,".",mygene,"-log.png",sep=""),res=120,width=1000,height=800)
+plotGene(samples.brca,samples.data.brca.log,study=mystudy,gene=mygene)
+dev.off()
+
+mygene <- "ABCA1"
+png(filename=paste("output/",mystudy,".",mygene,"-log.png",sep=""),res=120,width=1000,height=800)
+plotGene(samples.brca,samples.data.brca.log,study=mystudy,gene=mygene)
+dev.off()
+
+mygene <- "BRCA1"
+png(filename=paste("output/",mystudy,".",mygene,"-log.png",sep=""),res=120,width=2200,height=800)
+plotGene(samples.brca,samples.data.brca.log,study=mystudy,gene=mygene)
+dev.off()
+
+mygene <- "APP"
+png(filename=paste("output/",mystudy,".",mygene,"-log.png",sep=""),res=120,width=1800,height=800)
+plotGene(samples.brca,samples.data.brca.log,study=mystudy,gene=mygene)
+dev.off()
+
+mygene <- "ATM"
+png(filename=paste("output/",mystudy,".",mygene,"-log.png",sep=""),res=120,width=1800,height=800)
+plotGene(samples.brca,samples.data.brca.log,study=mystudy,gene=mygene)
+dev.off()
+
+mygene <- "GAPDH"
+png(filename=paste("output/",mystudy,".",mygene,"-log.png",sep=""),res=120,width=1800,height=800)
+plotGene(samples.brca,samples.data.brca.log,study=mystudy,gene=mygene)
+dev.off()
+
+mygene <- "ACTB"
+png(filename=paste("output/",mystudy,".",mygene,"-log.png",sep=""),res=120,width=1800,height=800)
+plotGene(samples.brca,samples.data.brca.log,study=mystudy,gene=mygene)
+dev.off()
+
+################################
 # Test+Plot Select Genes in BRCA - quantile normalized
 ################################
 mystudy <- "BRCA"
@@ -291,6 +363,46 @@ dev.off()
 mygene <- "ACTB"
 png(filename=paste("output/",mystudy,".",mygene,"-quantile_norm.png",sep=""),res=120,width=1800,height=800)
 plotGene(samples.brca,samples.data.brca.quant,study=mystudy,gene=mygene)
+dev.off()
+
+################################
+# Test+Plot Select Genes in BRCA - quantile normalized log scale
+################################
+mystudy <- "BRCA"
+
+mygene <- "SMCHD1"
+png(filename=paste("output/",mystudy,".",mygene,"-quantile_norm_log10.png",sep=""),res=120,width=1000,height=800)
+plotGene(samples.brca,samples.data.brca.quant.log,study=mystudy,gene=mygene)
+dev.off()
+
+mygene <- "ABCA1"
+png(filename=paste("output/",mystudy,".",mygene,"-quantile_norm_log10.png",sep=""),res=120,width=1000,height=800)
+plotGene(samples.brca,samples.data.brca.quant.log,study=mystudy,gene=mygene)
+dev.off()
+
+mygene <- "BRCA1"
+png(filename=paste("output/",mystudy,".",mygene,"-quantile_norm_log10.png",sep=""),res=120,width=2200,height=800)
+plotGene(samples.brca,samples.data.brca.quant.log,study=mystudy,gene=mygene)
+dev.off()
+
+mygene <- "APP"
+png(filename=paste("output/",mystudy,".",mygene,"-quantile_norm_log10.png",sep=""),res=120,width=1800,height=800)
+plotGene(samples.brca,samples.data.brca.quant.log,study=mystudy,gene=mygene)
+dev.off()
+
+mygene <- "ATM"
+png(filename=paste("output/",mystudy,".",mygene,"-quantile_norm_log10.png",sep=""),res=120,width=1800,height=800)
+plotGene(samples.brca,samples.data.brca.quant.log,study=mystudy,gene=mygene)
+dev.off()
+
+mygene <- "GAPDH"
+png(filename=paste("output/",mystudy,".",mygene,"-quantile_norm_log10.png",sep=""),res=120,width=1800,height=800)
+plotGene(samples.brca,samples.data.brca.quant.log,study=mystudy,gene=mygene)
+dev.off()
+
+mygene <- "ACTB"
+png(filename=paste("output/",mystudy,".",mygene,"-quantile_norm_log10.png",sep=""),res=120,width=1800,height=800)
+plotGene(samples.brca,samples.data.brca.quant.log,study=mystudy,gene=mygene)
 dev.off()
 
 ################################
