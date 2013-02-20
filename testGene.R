@@ -72,10 +72,101 @@ testGenes <- function(samples,samples.data,study,ann)
 	test.out
 }
 
-testGenesPaired <- function(samples,samples.data,study)
+testGenesPaired <- function(samples,samples.data,study,ann)
 {
-	#TODO
-	#run t-test on all genes available - want ranked list of genes for a given study
+	#subset the correct study
+	samples.study <- samples[samples$Disease==study,]
+
+	#subset the tumor and normal samples
+	samples.tumor.rows <- (samples$Sample.Type=="Primary solid Tumor")&(samples$Disease==study)
+	samples.tumor <- samples[samples.tumor.rows,]
+
+	samples.normal.rows <- (samples.study$Sample.Type=="Solid Tissue Normal")&(samples$Disease==study)
+	samples.normal <- samples[samples.normal.rows,]
+
+	#create subsetted matrices
+	samples.data.tumor <- list("genes.norm"=samples.data$genes.norm[samples.tumor.rows,], "isoforms.norm"=samples.data$isoforms.norm[samples.tumor.rows,])
+	samples.data.normal <- list("genes.norm"=samples.data$genes.norm[samples.normal.rows,], "isoforms.norm"=samples.data$isoforms.norm[samples.normal.rows,])
+
+	#match pairs and create two paired matrices (rows must align)
+	tumor.id <- substr(samples.tumor$Barcode,1,12)
+	normal.id <- substr(samples.normal$Barcode,1,12)
+
+	pairs.index.normal <- match(tumor.id,normal.id)
+	#keep every tumor row that matches a row in normal
+	samples.data.tumor.pairs <- list("genes.norm"=samples.data.tumor$genes.norm[!is.na(pairs.index.normal),], "isoforms.norm"=samples.data.tumor$isoforms.norm[!is.na(pairs.index.normal),])
+	#keep the normal rows and reorder them to the order of matches in tumor
+	pairs.index.normal.i <- pairs.index.normal[!is.na(pairs.index.normal)]
+	samples.data.normal.pairs <- list("genes.norm"=samples.data.normal$genes.norm[pairs.index.normal.i,], "isoforms.norm"=samples.data.normal$isoforms.norm[pairs.index.normal.i,])
+
+	#calculate fold changes
+	folds.gen <- log2(samples.data.tumor.pairs$genes.norm/samples.data.normal.pairs$genes.norm)
+	folds.iso <- log2(samples.data.tumor.pairs$isoforms.norm/samples.data.normal.pairs$isoforms.norm)
+
+	rm.bads <- function(x)
+	{
+		if(x=="NaN"){x<-0} else if(x=="Inf"){x<-0} else if(x=="-Inf"){x<-0}
+		x
+	}
+	folds.gen <- apply(folds.gen,MARGIN=c(1,2),FUN=rm.bads)
+	folds.iso <- apply(folds.iso,MARGIN=c(1,2),FUN=rm.bads)
+
+	#run t-tests
+
+	folds <- folds.gen
+	ts <- foreach(i=1:ncol(folds),.combine=rbind, .errorhandling="remove",.verbose=TRUE) %dopar%
+	{
+		this.name = colnames(folds)[i]
+		myt <- t.test(folds[,i])
+		data.frame(col=i,name=this.name,p=myt$p.value)
+	}
+	ts$p <- sprintf(fmt="%.3g",ts$p)
+
+	ts.err <- foreach(i=1:ncol(folds),.combine=rbind, .errorhandling="remove",.verbose=TRUE) %dopar%
+	{
+		#detect errors and add flag so they aren't simply dropped
+		#mostly this is if t.test throws an error because data is too similar
+		this.name = colnames(folds)[i]
+		if(nrow(ts[ts$col==i,])<1)
+		{
+			data.frame(col=i,name=this.name,p="error")
+		}
+	}
+	tt.gen <- rbind(ts,ts.err)
+
+	folds <- folds.iso
+	ts <- foreach(i=1:ncol(folds),.combine=rbind, .errorhandling="remove",.verbose=TRUE) %dopar%
+	{
+		this.name = colnames(folds)[i]
+		myt <- t.test(folds[,i])
+		data.frame(col=i,name=this.name,p=myt$p.value)
+	}
+	ts$p <- sprintf(fmt="%.3g",ts$p)
+
+	ts.err <- foreach(i=1:ncol(folds),.combine=rbind, .errorhandling="remove",.verbose=TRUE) %dopar%
+	{
+		#detect errors and add flag so they aren't simply dropped
+		#mostly this is if t.test throws an error because data is too similar
+		this.name = colnames(folds)[i]
+		if(nrow(ts[ts$col==i,])<1)
+		{
+			data.frame(col=i,name=this.name,p="error")
+		}
+	}
+	tt.iso <- rbind(ts,ts.err)
+
+	split.dot <- function(x){strsplit(x,"\\.")[[1]][1]}
+	tt.iso.base <- unlist(lapply(tt.iso$name,FUN=split.dot))
+	tt.isoform <- data.frame(isoform.base.id=tt.iso.base,isoform.id=tt.iso$name,p.value=tt.iso$p)
+
+	#get gene names for isoform IDs from the annotation
+	iso.base <- unlist(lapply(ann$name,FUN=split.dot))
+	ann.sub <- data.frame(isoform.base.id=iso.base, isoform.id=ann$name,gene.id=ann$geneSymbol,description=ann$description)
+
+	tt.isoform.join <- join(tt.isoform,ann.sub,by="isoform.base.id")
+	
+	test.out = list("genes.t.test"=tt.gen,"isoforms.t.test"=tt.isoform.join)
+	test.out
 }
 
 plotGene <- function(samples,samples.data,study,gene)
@@ -217,7 +308,7 @@ plotGenePaired <- function(samples,samples.data,study,gene)
 	folds <- apply(folds,MARGIN=c(1,2),FUN=rm.bads)
 
 	#run t-tests
-	ts <- foreach(i=1:ncol(folds),.combine=rbind, .errorhandling="stop") %do%
+	ts <- foreach(i=1:ncol(folds),.combine=rbind, .errorhandling="remove") %do%
 	{
 		this.name = colnames(folds)[i]
 		myt <- t.test(folds[,i])
@@ -347,6 +438,13 @@ write.csv(test.brca$isoforms.t.test,file="output/BRCA.t-test.isoforms-quantile_n
 test.prad <- testGenes(samples.prad,samples.data.prad,study="PRAD",ann=ann)
 write.csv(test.prad$genes.t.test,file="output/PRAD.t-test.genes.csv", row.names=FALSE)
 write.csv(test.prad$isoforms.t.test,file="output/PRAD.t-test.isoforms.csv", row.names=FALSE)
+
+################################
+# Test All Genes in BRCA - paired analysis
+################################
+test.brca.paired <- testGenesPaired(samples.brca,samples.data.brca,study="BRCA",ann=ann)
+write.csv(test.brca$genes.t.test,file="output/BRCA.t-test.pairs.genes.csv", row.names=FALSE)
+write.csv(test.brca$isoforms.t.test,file="output/BRCA.t-test.pairs.isoforms.csv", row.names=FALSE)
 
 ################################
 # Test+Plot Select Genes in BRCA - paired samples only
