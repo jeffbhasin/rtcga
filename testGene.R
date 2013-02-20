@@ -115,19 +115,30 @@ plotGene <- function(samples,samples.data,study,gene)
 	samples.data.normal <- cbind(genesub,samples.data$isoforms.norm[samples.normal.rows,isoforms.cols])
 
 	#run t-tests
-	ts <- foreach(i=1:ncol(samples.data.tumor),.combine=c) %do%
+	ts <- foreach(i=1:ncol(samples.data.tumor),.combine=rbind, .errorhandling="remove") %do%
 	{
+		this.name = colnames(samples.data.normal)[i]
 		myt <- t.test(samples.data.tumor[,i],samples.data.normal[,i])
-		myt$p.value
+		data.frame(col=i,name=this.name,p=myt$p.value)
 	}
+	ts$p <- sprintf(fmt="%.3g",ts$p)
 
-	isos <- colnames(samples.data.normal)
-	isos <- isos[order(isos)]
-	ts <- round(ts[order(ts)],digits=8)
+	ts.err <- foreach(i=1:ncol(samples.data.tumor),.combine=rbind, .errorhandling="remove") %do%
+	{
+		#detect errors and add flag so they aren't simply dropped
+		#mostly this is if t.test throws an error because data is too similar
+		this.name = colnames(samples.data.normal)[i]
+		if(nrow(ts[ts$col==i,])<1)
+		{
+			data.frame(col=i,name=this.name,p="error")
+		}
+	}
+	tt <- rbind(ts,ts.err)
+	tt <- tt[order(as.character(tt$name)),]
 
 	table.data <- data.frame()
-	table.data <- rbind(table.data,ts)
-	names(table.data) <- isos
+	table.data <- rbind(table.data,tt$p)
+	names(table.data) <- tt$name
 	rownames(table.data) <- "pvalue"
 
 	#recast data into a table
