@@ -21,7 +21,7 @@ library(doMC)
 registerDoMC(nCores)
 
 ###############################################
-## Local Functions
+## Local Functions - move to rtcga.R when done
 ###############################################
 testGenes <- function(samples,samples.data,study,ann)
 {
@@ -31,11 +31,11 @@ testGenes <- function(samples,samples.data,study,ann)
 	samples.study <- samples[samples$Disease==study,]
 
 	#subset the tumor and normal samples
-	samples.tumor.rows <- samples.study$Sample.Type=="Primary solid Tumor"
-	samples.tumor <- samples.study[samples.tumor.rows,]
+	samples.tumor.rows <- (samples$Sample.Type=="Primary solid Tumor")&(samples$Disease==study)
+	samples.tumor <- samples[samples.tumor.rows,]
 
-	samples.normal.rows <- samples.study$Sample.Type=="Solid Tissue Normal"
-	samples.normal <- samples.study[samples.normal.rows,]
+	samples.normal.rows <- (samples.study$Sample.Type=="Solid Tissue Normal")&(samples$Disease==study)
+	samples.normal <- samples[samples.normal.rows,]
 	
 	#create subsetted matrices
 	samples.data.tumor <- list("genes.norm"=samples.data$genes.norm[samples.tumor.rows,], "isoforms.norm"=samples.data$isoforms.norm[samples.tumor.rows,])
@@ -74,6 +74,7 @@ testGenes <- function(samples,samples.data,study,ann)
 
 testGenesPaired <- function(samples,samples.data,study)
 {
+	#TODO
 	#run t-test on all genes available - want ranked list of genes for a given study
 }
 
@@ -83,11 +84,11 @@ plotGene <- function(samples,samples.data,study,gene)
 	samples.study <- samples[samples$Disease==study,]
 
 	#subset the tumor and normal samples
-	samples.tumor.rows <- samples.study$Sample.Type=="Primary solid Tumor"
-	samples.tumor <- samples.study[samples.tumor.rows,]
+	samples.tumor.rows <- (samples$Sample.Type=="Primary solid Tumor")&(samples$Disease==study)
+	samples.tumor <- samples[samples.tumor.rows,]
 
-	samples.normal.rows <- samples.study$Sample.Type=="Solid Tissue Normal"
-	samples.normal <- samples.study[samples.normal.rows,]
+	samples.normal.rows <- (samples.study$Sample.Type=="Solid Tissue Normal")&(samples$Disease==study)
+	samples.normal <- samples[samples.normal.rows,]
 
 	#subset the desired gene
 	split.pipe <- function(x){strsplit(x,"\\|")[[1]][1]}
@@ -147,29 +148,33 @@ plotGene <- function(samples,samples.data,study,gene)
 
 }
 
-
-
-doQuantileNorm <- function(samples,study)
+plotGenePaired <- function()
 {
-	#perform quantile normalization on the raw data and then use this data for getGeneData
-	samples.study <- samples[which((samples$Disease==study)&(samples$Sample.Type=="Solid Tissue Normal" | samples$Sample.Type=="Primary solid Tumor")),]
-
-	samples.data.raw <- foreach(i=1:nrow(samples.study), .combine=cbind, .inorder=TRUE, .verbose=TRUE) %dopar%
-	{
-		sample.data <- read.table.big(as.character(samples.study[i,]$file.iso.raw))
-		m <- as.matrix(sample.data$raw_count)
-		rownames(m) <- sample.data$isoform_id
-		colnames(m) <- as.character(samples.study[i,]$UUID)
-		m
-	}
-
-	quant.all <- normalize.quantiles(samples.data.raw,copy=TRUE)
-
+	#TODO
 }
 
-getGeneDataQuantile <- function(samples,study,gene)
-{
 
+doQuantileNorm <- function(samples, samples.data, study)
+{
+	#perform quantile normalization on the raw data and then use this data for getGeneData
+
+	#subset the correct study
+	samples.study <- samples[samples$Disease==study,]
+	samples.study.rows <- samples$Disease==study
+
+	#create subsetted matrix
+	samples.data.study <- list("genes.raw"=samples.data$genes.raw[samples.study.rows,], "isoforms.raw"=samples.data$isoforms.norm[samples.study.rows,])
+
+	quant.all.genes <- normalize.quantiles(samples.data.study$genes.raw,copy=TRUE)
+	colnames(quant.all.genes) <- colnames(samples.data.study$genes.raw)
+	rownames(quant.all.genes) <- rownames(samples.data.study$genes.raw)
+
+	quant.all.isoforms <- normalize.quantiles(samples.data.study$isoforms.raw,copy=TRUE)
+	colnames(quant.all.isoforms) <- colnames(samples.data.study$isoforms.raw)
+	rownames(quant.all.isoforms) <- rownames(samples.data.study$isoforms.raw)
+
+	mine.out <- list("genes.norm"=quant.all.genes,"isoforms.norm"=quant.all.isoforms)
+	mine.out
 }
 
 ################################
@@ -180,12 +185,26 @@ ann <- readUCSCAnnotation(genome="hg19",data.path="GeneInfo/")
 studies <- findStudies()
 samples <- findSamples()
 
+#samples.brca <- samples[which(samples$Disease=="BRCA"),]
+#samples.data.brca <- readSampleData(samples.brca)
+#save(samples.brca,samples.data.brca,file="output/brca.RData")
+load("output/brca.RData")
+samples.data.brca.quant <- doQuantileNorm(samples.brca,samples.data.brca,"BRCA")
+
+
 ################################
 # Test All Genes in BRCA
 ################################
 test.brca <- testGenes(samples.brca,samples.data.brca,study="BRCA",ann=ann)
 write.csv(test.brca$genes.t.test,file="output/BRCA.t-test.genes.csv", row.names=FALSE)
 write.csv(test.brca$isoforms.t.test,file="output/BRCA.t-test.isoforms.csv", row.names=FALSE)
+
+################################
+# Test All Genes in BRCA - Quantile Normalized
+################################
+test.brca <- testGenes(samples.brca,samples.data.brca.quant,study="BRCA",ann=ann)
+write.csv(test.brca$genes.t.test,file="output/BRCA.t-test.genes-quantile_norm.csv", row.names=FALSE)
+write.csv(test.brca$isoforms.t.test,file="output/BRCA.t-test.isoforms-quantile_norm.csv", row.names=FALSE)
 
 ################################
 # Test All Genes in PRAD
@@ -197,12 +216,6 @@ write.csv(test.prad$isoforms.t.test,file="output/PRAD.t-test.isoforms.csv", row.
 ################################
 # Test+Plot Select Genes in BRCA
 ################################
-
-#samples.brca <- samples[which(samples$Disease=="BRCA"),]
-#samples.data.brca <- readSampleData(samples.brca)
-#save(samples.brca,samples.data.brca,file="output/brca.RData")
-load("output/brca.RData")
-
 mystudy <- "BRCA"
 
 mygene <- "SMCHD1"
@@ -238,6 +251,46 @@ dev.off()
 mygene <- "ACTB"
 png(filename=paste("output/",mystudy,".",mygene,".png",sep=""),res=120,width=1800,height=800)
 plotGene(samples.brca,samples.data.brca,study=mystudy,gene=mygene)
+dev.off()
+
+################################
+# Test+Plot Select Genes in BRCA - quantile normalized
+################################
+mystudy <- "BRCA"
+
+mygene <- "SMCHD1"
+png(filename=paste("output/",mystudy,".",mygene,"-quantile_norm.png",sep=""),res=120,width=1000,height=800)
+plotGene(samples.brca,samples.data.brca.quant,study=mystudy,gene=mygene)
+dev.off()
+
+mygene <- "ABCA1"
+png(filename=paste("output/",mystudy,".",mygene,"-quantile_norm.png",sep=""),res=120,width=1000,height=800)
+plotGene(samples.brca,samples.data.brca.quant,study=mystudy,gene=mygene)
+dev.off()
+
+mygene <- "BRCA1"
+png(filename=paste("output/",mystudy,".",mygene,"-quantile_norm.png",sep=""),res=120,width=2200,height=800)
+plotGene(samples.brca,samples.data.brca.quant,study=mystudy,gene=mygene)
+dev.off()
+
+mygene <- "APP"
+png(filename=paste("output/",mystudy,".",mygene,"-quantile_norm.png",sep=""),res=120,width=1800,height=800)
+plotGene(samples.brca,samples.data.brca.quant,study=mystudy,gene=mygene)
+dev.off()
+
+mygene <- "ATM"
+png(filename=paste("output/",mystudy,".",mygene,"-quantile_norm.png",sep=""),res=120,width=1800,height=800)
+plotGene(samples.brca,samples.data.brca.quant,study=mystudy,gene=mygene)
+dev.off()
+
+mygene <- "GAPDH"
+png(filename=paste("output/",mystudy,".",mygene,"-quantile_norm.png",sep=""),res=120,width=1800,height=800)
+plotGene(samples.brca,samples.data.brca.quant,study=mystudy,gene=mygene)
+dev.off()
+
+mygene <- "ACTB"
+png(filename=paste("output/",mystudy,".",mygene,"-quantile_norm.png",sep=""),res=120,width=1800,height=800)
+plotGene(samples.brca,samples.data.brca.quant,study=mystudy,gene=mygene)
 dev.off()
 
 ################################
