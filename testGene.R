@@ -159,9 +159,101 @@ plotGene <- function(samples,samples.data,study,gene)
 
 }
 
-plotGenePaired <- function()
+plotGenePaired <- function(samples,samples.data,study,gene)
 {
-	#TODO
+	#subset the correct study
+	samples.study <- samples[samples$Disease==study,]
+
+	#subset the tumor and normal samples
+	samples.tumor.rows <- (samples$Sample.Type=="Primary solid Tumor")&(samples$Disease==study)
+	samples.tumor <- samples[samples.tumor.rows,]
+
+	samples.normal.rows <- (samples.study$Sample.Type=="Solid Tissue Normal")&(samples$Disease==study)
+	samples.normal <- samples[samples.normal.rows,]
+
+	#subset the desired gene
+	split.pipe <- function(x){strsplit(x,"\\|")[[1]][1]}
+	genes.names <- unlist(lapply(colnames(samples.data$genes.norm),FUN=split.pipe))
+	genes.col <- genes.names==gene
+
+	#subset the desired isoforms
+	split.dot <- function(x){strsplit(x,"\\.")[[1]][1]}
+	isoforms.names <- unlist(lapply(colnames(samples.data$isoforms.norm),FUN=split.dot))
+	
+	#get isoforms for the gene symbol from annotation
+	gene.isoforms <- getAll(ann,gene)
+	isoforms.this.gene <- unlist(lapply(gene.isoforms$name,FUN=split.dot))
+
+	isoforms.cols <- isoforms.names %in% isoforms.this.gene
+
+	#create subsetted matrices
+	genesub <- matrix(samples.data$genes.norm[samples.tumor.rows,genes.col])
+	colnames(genesub) <- gene
+	samples.data.tumor <- cbind(genesub,samples.data$isoforms.norm[samples.tumor.rows,isoforms.cols])
+
+	genesub <- matrix(samples.data$genes.norm[samples.normal.rows,genes.col])
+	colnames(genesub) <- gene
+	samples.data.normal <- cbind(genesub,samples.data$isoforms.norm[samples.normal.rows,isoforms.cols])
+
+	#match pairs and create two paired matrices (rows must align)
+	tumor.id <- substr(samples.tumor$Barcode,1,12)
+	normal.id <- substr(samples.normal$Barcode,1,12)
+
+	pairs.index.normal <- match(tumor.id,normal.id)
+	#keep every tumor row that matches a row in normal
+	samples.data.tumor.pairs <- samples.data.tumor[!is.na(pairs.index.normal),]
+	#keep the normal rows and reorder them to the order of matches in tumor
+	pairs.index.normal.i <- pairs.index.normal[!is.na(pairs.index.normal)]
+	samples.data.normal.pairs <- samples.data.normal[pairs.index.normal.i,]
+
+	#calculate fold changes
+	folds <- log2(samples.data.tumor.pairs/samples.data.normal.pairs)
+	
+	rm.bads <- function(x)
+	{
+		if(x=="NaN"){x<-0} else if(x=="Inf"){x<-0} else if(x=="-Inf"){x<-0}
+		x
+	}
+	folds <- apply(folds,MARGIN=c(1,2),FUN=rm.bads)
+
+	#run t-tests
+	ts <- foreach(i=1:ncol(folds),.combine=rbind, .errorhandling="stop") %do%
+	{
+		this.name = colnames(folds)[i]
+		myt <- t.test(folds[,i])
+		data.frame(col=i,name=this.name,p=myt$p.value)
+	}
+	ts$p <- sprintf(fmt="%.3g",ts$p)
+
+	ts.err <- foreach(i=1:ncol(folds),.combine=rbind, .errorhandling="remove") %do%
+	{
+		#detect errors and add flag so they aren't simply dropped
+		#mostly this is if t.test throws an error because data is too similar
+		this.name = colnames(folds)[i]
+		if(nrow(ts[ts$col==i,])<1)
+		{
+			data.frame(col=i,name=this.name,p="error")
+		}
+	}
+	tt <- rbind(ts,ts.err)
+	tt <- tt[order(as.character(tt$name)),]
+
+	table.data <- data.frame()
+	table.data <- rbind(table.data,tt$p)
+	names(table.data) <- tt$name
+	rownames(table.data) <- "pvalue"
+
+	#recast data into a table
+	plot.data <- melt(folds)
+
+	names(plot.data) <- c("sample","isoform","level")
+
+	#produce plot
+	p1 <- ggplot(plot.data, aes(isoform,level,fill=isoform)) + geom_boxplot() + ggplot.clean() + labs(title=paste(gene," in ",study,sep=""),ylab="log2(tumor exp / normal exp)")
+
+	table.grob <- arrangeGrob(tableGrob(table.data, gpar.coretext=gpar(fontsize=10), gpar.coltext=gpar(fontsize=10), gpar.rowtext=gpar(fontsize=10)))
+	grid.arrange(p1, table.grob, ncol=1,heights=c(9/10,1/10))
+
 }
 
 
@@ -257,6 +349,26 @@ write.csv(test.prad$genes.t.test,file="output/PRAD.t-test.genes.csv", row.names=
 write.csv(test.prad$isoforms.t.test,file="output/PRAD.t-test.isoforms.csv", row.names=FALSE)
 
 ################################
+# Test+Plot Select Genes in BRCA - paired samples only
+################################
+mystudy <- "BRCA"
+
+mygene <- "SMCHD1"
+png(filename=paste("output/",mystudy,".",mygene,".pairs.png",sep=""),res=120,width=1000,height=800)
+plotGenePaired(samples.brca,samples.data.brca,study=mystudy,gene=mygene)
+dev.off()
+
+mygene <- "ABCA1"
+png(filename=paste("output/",mystudy,".",mygene,".pairs.png",sep=""),res=120,width=1000,height=800)
+plotGenePaired(samples.brca,samples.data.brca,study=mystudy,gene=mygene)
+dev.off()
+
+mygene <- "BRCA1"
+png(filename=paste("output/",mystudy,".",mygene,".pairs.png",sep=""),res=120,width=2200,height=800)
+plotGenePaired(samples.brca,samples.data.brca,study=mystudy,gene=mygene)
+dev.off()
+
+################################
 # Test+Plot Select Genes in BRCA
 ################################
 mystudy <- "BRCA"
@@ -292,6 +404,36 @@ plotGene(samples.brca,samples.data.brca,study=mystudy,gene=mygene)
 dev.off()
 
 mygene <- "ACTB"
+png(filename=paste("output/",mystudy,".",mygene,".png",sep=""),res=120,width=1800,height=800)
+plotGene(samples.brca,samples.data.brca,study=mystudy,gene=mygene)
+dev.off()
+
+mygene <- "NEK2"
+png(filename=paste("output/",mystudy,".",mygene,".png",sep=""),res=120,width=1800,height=800)
+plotGene(samples.brca,samples.data.brca,study=mystudy,gene=mygene)
+dev.off()
+
+mygene <- "SPC25"
+png(filename=paste("output/",mystudy,".",mygene,".png",sep=""),res=120,width=1800,height=800)
+plotGene(samples.brca,samples.data.brca,study=mystudy,gene=mygene)
+dev.off()
+
+mygene <- "DTL"
+png(filename=paste("output/",mystudy,".",mygene,".png",sep=""),res=120,width=1800,height=800)
+plotGene(samples.brca,samples.data.brca,study=mystudy,gene=mygene)
+dev.off()
+
+mygene <- "ARF1"
+png(filename=paste("output/",mystudy,".",mygene,".png",sep=""),res=120,width=1800,height=800)
+plotGene(samples.brca,samples.data.brca,study=mystudy,gene=mygene)
+dev.off()
+
+mygene <- "RAD51"
+png(filename=paste("output/",mystudy,".",mygene,".png",sep=""),res=120,width=1800,height=800)
+plotGene(samples.brca,samples.data.brca,study=mystudy,gene=mygene)
+dev.off()
+
+mygene <- "KIF23"
 png(filename=paste("output/",mystudy,".",mygene,".png",sep=""),res=120,width=1800,height=800)
 plotGene(samples.brca,samples.data.brca,study=mystudy,gene=mygene)
 dev.off()
