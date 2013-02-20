@@ -23,21 +23,58 @@ registerDoMC(nCores)
 ###############################################
 ## Local Functions
 ###############################################
-testGenes <- function()
+testGenes <- function(samples,samples.data,study,ann)
 {
 	#run t-test on all genes available - want ranked list of genes for a given study
+
+	#subset the correct study
+	samples.study <- samples[samples$Disease==study,]
+
+	#subset the tumor and normal samples
+	samples.tumor.rows <- samples.study$Sample.Type=="Primary solid Tumor"
+	samples.tumor <- samples.study[samples.tumor.rows,]
+
+	samples.normal.rows <- samples.study$Sample.Type=="Solid Tissue Normal"
+	samples.normal <- samples.study[samples.normal.rows,]
+	
+	#create subsetted matrices
+	samples.data.tumor <- list("genes.norm"=samples.data$genes.norm[samples.tumor.rows,], "isoforms.norm"=samples.data$isoforms.norm[samples.tumor.rows,])
+	samples.data.normal <- list("genes.norm"=samples.data$genes.norm[samples.normal.rows,], "isoforms.norm"=samples.data$isoforms.norm[samples.normal.rows,])
+
+	#run t-tests
+	tt.gene <- foreach(i=1:ncol(samples.data.tumor$genes.norm),.combine=c,.verbose=TRUE) %dopar%
+	{
+		myt <- t.test(samples.data.tumor$genes.norm[,i],samples.data.normal$genes.norm[,i])
+		myt$p.value
+	}
+	split.pipe <- function(x){strsplit(x,"\\|")[[1]][1]}
+	genes.names <- unlist(lapply(colnames(samples.data.tumor$genes.norm),FUN=split.pipe))
+	split.pipe2 <- function(x){strsplit(x,"\\|")[[1]][2]}
+	entid <- unlist(lapply(colnames(samples.data.tumor$genes.norm),FUN=split.pipe2))
+	tt.gene <- data.frame(gene.id=genes.names,entrez.id=entid,p.value=tt.gene)
+
+	tt.isoform <- foreach(i=1:ncol(samples.data.tumor$isoforms.norm),.combine=c,.verbose=TRUE) %dopar%
+	{
+		myt <- t.test(samples.data.tumor$isoforms.norm[,i],samples.data.normal$isoforms.norm[,i])
+		myt$p.value
+	}
+	split.dot <- function(x){strsplit(x,"\\.")[[1]][1]}
+	tt.iso.base <- unlist(lapply(colnames(samples.data.tumor$isoforms.norm),FUN=split.dot))
+	tt.isoform <- data.frame(isoform.base.id=tt.iso.base,isoform.id=colnames(samples.data.tumor$isoforms.norm),p.value=tt.isoform)
+
+	#get gene names for isoform IDs from the annotation
+	iso.base <- unlist(lapply(ann$name,FUN=split.dot))
+	ann.sub <- data.frame(isoform.base.id=iso.base, isoform.id=ann$name,gene.id=ann$geneSymbol,description=ann$description)
+
+	tt.isoform.join <- join(tt.isoform,ann.sub,by="isoform.base.id")
+	
+	test.out = list("genes.t.test"=tt.gene,"isoforms.t.test"=tt.isoform.join)
+	test.out
 }
-testGeneIsoforms <- function()
-{
-	#run t-test on all gene isoforms available, using annotation to connect IDs back to gene names
-}
-testGenesPaired <- function()
+
+testGenesPaired <- function(samples,samples.data,study)
 {
 	#run t-test on all genes available - want ranked list of genes for a given study
-}
-testGeneIsoformsPaired <- function()
-{
-	#run t-test on all gene isoforms available, using annotation to connect IDs back to gene names
 }
 
 plotGene <- function(samples,samples.data,study,gene)
@@ -144,7 +181,21 @@ studies <- findStudies()
 samples <- findSamples()
 
 ################################
-# Test Select Genes in BRCA
+# Test All Genes in BRCA
+################################
+test.brca <- testGenes(samples.brca,samples.data.brca,study="BRCA",ann=ann)
+write.csv(test.brca$genes.t.test,file="output/BRCA.t-test.genes.csv", row.names=FALSE)
+write.csv(test.brca$isoforms.t.test,file="output/BRCA.t-test.isoforms.csv", row.names=FALSE)
+
+################################
+# Test All Genes in PRAD
+################################
+test.prad <- testGenes(samples.prad,samples.data.prad,study="PRAD",ann=ann)
+write.csv(test.prad$genes.t.test,file="output/PRAD.t-test.genes.csv", row.names=FALSE)
+write.csv(test.prad$isoforms.t.test,file="output/PRAD.t-test.isoforms.csv", row.names=FALSE)
+
+################################
+# Test+Plot Select Genes in BRCA
 ################################
 
 #samples.brca <- samples[which(samples$Disease=="BRCA"),]
@@ -190,7 +241,7 @@ plotGene(samples.brca,samples.data.brca,study=mystudy,gene=mygene)
 dev.off()
 
 ################################
-# Test SMCHD1 in PRAD
+# Test+Plot Select Genes in PRAD
 ################################
 
 #samples.prad <- samples[which(samples$Disease=="PRAD"),]
